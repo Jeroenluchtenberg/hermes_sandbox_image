@@ -1,0 +1,43 @@
+name: build
+
+# Builds the sandbox image Hermes' Docker terminal backend runs the agent's
+# commands in. Pull requests only build (to catch a broken Dockerfile); pushes
+# to main also publish to the Forgejo container registry.
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: git.luchtenberg.eu
+  IMAGE: git.luchtenberg.eu/infra/hermes-sandbox
+
+jobs:
+  build:
+    runs-on: devops
+    steps:
+      - uses: actions/checkout@v4
+
+      # VERSION is the source of truth for the tag, so the Ansible side
+      # (hermes_sandbox_tag) and this workflow cannot disagree.
+      - name: Read the pinned version
+        id: version
+        run: echo "value=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: |
+          docker build \
+            -t "$IMAGE:${{ steps.version.outputs.value }}" \
+            -t "$IMAGE:latest" .
+
+      # github.token cannot write packages on this Forgejo; use the org
+      # REGISTRY_TOKEN with the fixed username. Only for login/publish.
+      - name: Publish
+        if: github.event_name != 'pull_request'
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u jeroen --password-stdin
+          docker push "$IMAGE:${{ steps.version.outputs.value }}"
+          docker push "$IMAGE:latest"
