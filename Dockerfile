@@ -54,6 +54,25 @@ RUN pip install --no-cache-dir \
         pypdf==6.19.0 \
     && python -c "import yaml, pypdf"
 
+# Run unprivileged as the base image's `pn` user (uid/gid 1000), so a command
+# the agent runs is not root inside the container.
+#
+# Hermes' Docker backend still assumes a root-shaped layout: it starts the
+# container with `-w /root` and mounts its state over /root and /workspace
+# (tmpfs, mode 1777, when non-persistent; host dirs from ~/.hermes/sandboxes
+# when persistent). HOME therefore stays /root rather than /home/pn, which
+# Hermes would also cover with an empty tmpfs. The image-side /root and
+# /workspace are handed to pn so they work even when nothing is mounted.
+#
+# With a persistent sandbox, the bind-mounted host dirs are owned by the user
+# Hermes runs as, so enable `terminal.docker_run_as_host_user` in Hermes: its
+# `--user uid:gid` overrides this USER and makes those dirs writable.
+ENV HOME=/root \
+    PATH=/root/.local/bin:$PATH
+RUN mkdir -p /workspace \
+    && chown pn:pn /root /workspace
+USER pn
+
 # Hermes bind-mounts its own state over /workspace and /root at container
 # creation, so nothing here should expect to own those paths.
 WORKDIR /workspace
