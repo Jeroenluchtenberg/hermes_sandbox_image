@@ -21,19 +21,18 @@ RUN tar -xzf /tmp/cook.tar.gz -C /usr/local/bin cook \
     && rm /tmp/cook.tar.gz \
     && cook --version
 
-# Forgejo CLI. Bump deliberately:
-#   curl -s "https://codeberg.org/api/v1/repos/forgejo-contrib/forgejo-cli/releases?limit=1" | jq -r '.[0].tag_name'
-ARG FJ_VERSION=v0.6.0
+# GitHub CLI. Bump deliberately:
+#   gh api repos/cli/cli/releases/latest --jq .tag_name  (without the leading v)
+ARG GH_VERSION=2.102.0
 
-# Upstream only ships a glibc build (no musl), dynamically linked against
-# OpenSSL 3 and needing glibc >= 2.39. The Debian trixie base satisfies both;
-# the `fj version` check fails the build if a base-image bump ever stops
-# doing so, rather than shipping a binary that dies at runtime.
-ADD https://codeberg.org/forgejo-contrib/forgejo-cli/releases/download/${FJ_VERSION}/forgejo-cli-x86_64-linux.tar.gz /tmp/fj.tar.gz
-RUN tar -xzf /tmp/fj.tar.gz -C /usr/local/bin fj \
-    && chmod 0755 /usr/local/bin/fj \
-    && rm /tmp/fj.tar.gz \
-    && fj version
+# Upstream's release tarball is a statically linked Go binary, so like cook it
+# does not depend on the base image's libc. The `gh --version` check fails the
+# build if the download or extraction ever goes wrong.
+ADD https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz /tmp/gh.tar.gz
+RUN tar -xzf /tmp/gh.tar.gz -C /tmp \
+    && install -m 0755 /tmp/gh_*_linux_amd64/bin/gh /usr/local/bin/gh \
+    && rm -rf /tmp/gh.tar.gz /tmp/gh_*_linux_amd64 \
+    && gh --version
 
 # Ordinary CLI tooling an agent reaches for constantly. Kept deliberately
 # short: every addition is weight on a pull that happens on each host, and
@@ -46,6 +45,14 @@ RUN apt-get update \
         less \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Python libraries the agent's scripts commonly need (YAML config, reading
+# PDFs). Pinned for reproducible builds; bump deliberately:
+#   curl -s https://pypi.org/pypi/<name>/json | jq -r .info.version
+RUN pip install --no-cache-dir \
+        pyyaml==6.0.3 \
+        pypdf==6.19.0 \
+    && python -c "import yaml, pypdf"
 
 # Hermes bind-mounts its own state over /workspace and /root at container
 # creation, so nothing here should expect to own those paths.
