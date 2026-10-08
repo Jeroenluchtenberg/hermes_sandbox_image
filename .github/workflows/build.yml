@@ -2,7 +2,7 @@ name: build
 
 # Builds the sandbox image Hermes' Docker terminal backend runs the agent's
 # commands in. Pull requests only build (to catch a broken Dockerfile); pushes
-# to main also publish to the Forgejo container registry.
+# to main also publish to the GitHub container registry.
 on:
   workflow_dispatch:
   pull_request:
@@ -10,12 +10,16 @@ on:
     branches: [main]
 
 env:
-  REGISTRY: git.luchtenberg.eu
-  IMAGE: git.luchtenberg.eu/infra/hermes-sandbox
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/jeroenluchtenberg/hermes-sandbox
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   build:
-    runs-on: devops
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -31,13 +35,11 @@ jobs:
             -t "$IMAGE:${{ steps.version.outputs.value }}" \
             -t "$IMAGE:latest" .
 
-      # github.token cannot write packages on this Forgejo; use the org
-      # REGISTRY_TOKEN with the fixed username. Only for login/publish.
       - name: Publish
         if: github.event_name != 'pull_request'
         env:
-          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u jeroen --password-stdin
+          echo "$GITHUB_TOKEN" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
           docker push "$IMAGE:${{ steps.version.outputs.value }}"
           docker push "$IMAGE:latest"
